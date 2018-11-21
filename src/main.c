@@ -1,101 +1,141 @@
-// Bare bones scanner and parser for the following LL(1) grammar:
-// expr -> term { [+-] term }     ; An expression is terms separated by add ops.
-// term -> factor { [*/] factor } ; A term is factors separated by mul ops.
-// factor -> unsigned_factor      ; A signed factor is a factor, 
-//         | - unsigned_factor    ;   possibly with leading minus sign
-// unsigned_factor -> ( expr )    ; An unsigned factor is a parenthesized expression 
-//         | NUMBER               ;   or a number
-//
-// The parser returns the floating point value of the expression.
+/*
+ * "Struktur CFG"
+ * 
+ * E -> E + T | E - T | T
+ * T -> T * P | T / P | P
+ * P -> F ^ P | F
+ * F -> U | - U
+ * U -> ( E ) | N
+ * N -> D . D | D | . D
+ * D -> 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 0 | D D
+ * 
+ * Mengembalikan nilai dengan formatter %g.
+ */
+
+/* 
+ * File:   main.c
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
-// The token buffer. We never check for overflow! Do so in production code.
-char buf[1024];
+// slot token.
+char slot[2048];
 int n = 0;
 
-// The current character.
-int ch;
+// current char.
+int CC;
 
-// The look-ahead token.  This is the 1 in LL(1).
+// syntax token.
 
 enum {
-    ADD_OP, MUL_OP, LEFT_PAREN, RIGHT_PAREN, NUMBER, END_INPUT
-} look_ahead;
+    NUMBER,
+    L_PARENTHESES,
+    R_PARENTHESES,
+    MUL_DIV,
+    ADD_SUB,
+    POWD,
+    END
+} syntax;
 
-// Forward declarations.
+// deklarasi fungsi.
 void init(void);
-void advance(void);
-double expr(void);
+void adv(void);
+double expression(void);
 void error(char *msg);
+double power(void);
 
-// Parse expressions, one per line. 
-
-int main(void) {
+int main(int argc, char** argv) {
+    printf("\n"
+            " ,-.     .         .     .           \n"
+            "/        |         |     |           \n"
+            "|    ,-: | ,-. . . | ,-: |-  ,-. ;-. \n"
+            "\\    | | | |   | | | | | |   | | |   \n"
+            " `-' `-` ' `-' `-` ' `-` `-' `-' '   \n"
+            "\n"
+            "Operator:\n"
+            " ()\t-- pengelompokan\n"
+            "  ^\t-- perpangkatan\n"
+            "  *\t-- perkalian\n"
+            "  /\t-- pembagian\n"
+            "  +\t-- penjumlahan/positif\n"
+            "  -\t-- pengurangan/negatif\n"
+            "  !\t-- keluar program\n"
+            "> ");
     init();
-    while (1) {
-        double val = expr();
-        printf("val: %f\n", val);
-        if (look_ahead != END_INPUT) error("junk after expression");
-        advance(); // past end of input mark
+    while (CC != '!') {
+        double val = expression();
+        if (isfinite(val)) {
+            printf("result: %g\n", val);
+        } else {
+            printf("MATH ERROR\n");
+        }
+        if (syntax != END) error("junk after expression");
+        printf("> ");
+        adv();
     }
-    return 0;
+    return (EXIT_SUCCESS);
 }
 
-// Just die on any error.
+// Keluar jika ada kesalahan syntax.
 
 void error(char *msg) {
-    fprintf(stderr, "Error: %s. I quit.\n", msg);
+    fprintf(stderr, "Error: %s. quit.\n", msg);
     exit(1);
 }
 
-// Buffer the current character and read a new one.
+// Menyimpan CC, lalu membaca char baru.
 
 void read() {
-    buf[n++] = ch;
-    buf[n] = '\0'; // Terminate the string.
-    ch = getchar();
+    slot[n++] = CC;
+    slot[n] = '\0'; // Terminate the string.
+    CC = getchar();
 }
 
-// Ignore the current character.
+// Mengabaikan char.
 
 void ignore() {
-    ch = getchar();
+    CC = getchar();
 }
 
-// Reset the token buffer.
+// Me-reset slot token.
 
 void reset() {
     n = 0;
-    buf[0] = '\0';
+    slot[0] = '\0';
 }
 
-// The scanner.  A tiny deterministic finite automaton.
+// membaca dan memeriksa syntax.
+// juga sebagai CFG NUMBER dan DIGIT.
 
 int scan() {
     reset();
 START:
-    switch (ch) {
+    switch (CC) {
         case ' ': case '\t': case '\r':
             ignore();
             goto START;
 
+        case '^':
+            read();
+            return POWD;
+
         case '-': case '+':
             read();
-            return ADD_OP;
+            return ADD_SUB;
 
         case '*': case '/':
             read();
-            return MUL_OP;
+            return MUL_DIV;
 
         case '(':
             read();
-            return LEFT_PAREN;
+            return L_PARENTHESES;
 
         case ')':
             read();
-            return RIGHT_PAREN;
+            return R_PARENTHESES;
 
         case '0': case '1': case '2': case '3': case '4':
         case '5': case '6': case '7': case '8': case '9':
@@ -103,15 +143,22 @@ START:
             goto IN_LEADING_DIGITS;
 
         case '\n':
-            ch = ' '; // delayed ignore()
-            return END_INPUT;
+            CC = ' '; // delayed ignore()
+            return END;
+
+        case '.':
+            read();
+            goto IN_TRAILING_DIGITS;
+
+        case '!':
+            return END;
 
         default:
             error("bad character");
     }
 
 IN_LEADING_DIGITS:
-    switch (ch) {
+    switch (CC) {
         case '0': case '1': case '2': case '3': case '4':
         case '5': case '6': case '7': case '8': case '9':
             read();
@@ -126,7 +173,7 @@ IN_LEADING_DIGITS:
     }
 
 IN_TRAILING_DIGITS:
-    switch (ch) {
+    switch (CC) {
         case '0': case '1': case '2': case '3': case '4':
         case '5': case '6': case '7': case '8': case '9':
             read();
@@ -137,33 +184,35 @@ IN_TRAILING_DIGITS:
     }
 }
 
-// To advance is just to replace the look-ahead.
+// membaca syntax masukan selanjutnya.
 
-void advance() {
-    look_ahead = scan();
+void adv() {
+    syntax = scan();
 }
 
-// Clear the token buffer and read the first look-ahead.
+// Me-reset slot token lalu membaca syntax selanjutnya.
 
 void init() {
     reset();
-    ignore(); // junk current character
-    advance();
+    ignore();
+    adv();
 }
 
-double unsigned_factor() {
+// CFG NOTSIGNED.
+
+double notsigned() {
     double rtn = 0;
-    switch (look_ahead) {
+    switch (syntax) {
         case NUMBER:
-            sscanf(buf, "%lf", &rtn);
-            advance();
+            sscanf(slot, "%lf", &rtn);
+            adv();
             break;
 
-        case LEFT_PAREN:
-            advance();
-            rtn = expr();
-            if (look_ahead != RIGHT_PAREN) error("missing ')'");
-            advance();
+        case L_PARENTHESES:
+            adv();
+            rtn = expression();
+            if (syntax != R_PARENTHESES) error("missing ')'");
+            adv();
             break;
 
         default:
@@ -172,49 +221,78 @@ double unsigned_factor() {
     return rtn;
 }
 
+// CFG FACTOR.
+
 double factor() {
     double rtn = 0;
     // If there is a leading minus...
-    if (look_ahead == ADD_OP && buf[0] == '-') {
-        advance();
-        rtn = -unsigned_factor();
+    if (syntax == ADD_SUB && slot[0] == '-') {
+        adv();
+        rtn = -notsigned();
     } else
-        rtn = unsigned_factor();
+        rtn = notsigned();
     return rtn;
 }
 
+// CFG TERM.
+
 double term() {
-    double rtn = factor();
-    while (look_ahead == MUL_OP) {
-        switch (buf[0]) {
+    double rtn = power();
+    while (syntax == MUL_DIV) {
+        switch (slot[0]) {
             case '*':
-                advance();
-                rtn *= factor();
+                adv();
+                rtn *= power();
                 break;
 
             case '/':
-                advance();
-                rtn /= factor();
+                adv();
+                rtn /= power();
                 break;
         }
     }
     return rtn;
 }
 
-double expr() {
+// CFG EXPRESSION.
+
+double expression() {
     double rtn = term();
-    while (look_ahead == ADD_OP) {
-        switch (buf[0]) {
+    while (syntax == ADD_SUB) {
+        switch (slot[0]) {
             case '+':
-                advance();
+                adv();
                 rtn += term();
                 break;
 
             case '-':
-                advance();
+                adv();
                 rtn -= term();
                 break;
         }
     }
+    return rtn;
+}
+
+// CFG Power.
+
+double power() {
+    double rtn = factor();
+    double fs[2048];
+    fs[0] = rtn;
+    int i = 1;
+    while (syntax == POWD) {
+        switch (slot[0]) {
+            case '^':
+                adv();
+                fs[i] = factor();
+                break;
+        }
+        i++;
+    }
+    while (i--) {
+        fs[i - 1] = pow(fs[i - 1], fs[i]);
+    }
+    rtn = fs[0];
     return rtn;
 }
