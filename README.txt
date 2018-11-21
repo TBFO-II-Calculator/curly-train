@@ -24,9 +24,13 @@ Operator:
 ```
 - Enter arithmetic expression that you want to evaluate.
 e.g.,
-'''
+```
 > 6.2^1^999
 result: 6.2
 > 
-'''
+```
 - Enter '!' to exit the program.
+```
+> !
+$ 
+```
