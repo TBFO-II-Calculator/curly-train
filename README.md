@@ -34,7 +34,7 @@ result: 6.2
 > !
 $ 
 ```
-## Not in Linux ? Compile src/main.c.
+## Compile.
 ```
 $ gcc main.c -o main -lm
 ```
