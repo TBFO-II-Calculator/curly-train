@@ -81,6 +81,7 @@ int main(int argc, char** argv) {
 // Keluar jika ada kesalahan syntax.
 
 void error(char *msg) {
+    printf("SYNTAX ERROR\n");
     fprintf(stderr, "Error: %s. quit.\n", msg);
     exit(1);
 }
