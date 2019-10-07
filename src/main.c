@@ -47,7 +47,6 @@ void error(char *msg);
 double power(void);
 
 int main(int argc, char** argv) {
-    printf("hello\n");
     printf("\n"
             " ,-.     .         .     .           \n"
             "/        |         |     |           \n"
